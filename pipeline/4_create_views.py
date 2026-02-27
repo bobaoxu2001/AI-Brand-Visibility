@@ -35,11 +35,14 @@ def create_views() -> None:
 
             CREATE VIEW view_brand_sentiment AS
             SELECT
+                rr.model_name AS model_name,
                 pm.top_brand AS brand,
                 ROUND(AVG(pm.sentiment), 4) AS avg_sentiment,
                 COUNT(*) AS sample_size
             FROM parsed_metrics pm
-            GROUP BY pm.top_brand;
+            INNER JOIN raw_responses rr ON rr.id = pm.response_id
+            WHERE rr.status = 'success'
+            GROUP BY rr.model_name, pm.top_brand;
             """
         )
         conn.commit()
