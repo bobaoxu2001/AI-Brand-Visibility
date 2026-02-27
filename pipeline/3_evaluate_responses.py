@@ -7,7 +7,7 @@ import asyncio
 import sys
 from collections import Counter
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
 from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
@@ -25,8 +25,11 @@ from pipeline.db import (
 
 
 class JudgeResult(BaseModel):
-    top_brand: str = Field(
-        description="Single best brand recommendation from the response."
+    top_brand: Literal["Tesla", "Rivian", "Lucid", "Other"] = Field(
+        description=(
+            "Single best brand recommendation among Tesla, Rivian, Lucid, "
+            "or Other if none of those are clearly preferred."
+        )
     )
     sentiment: float = Field(
         ge=-1.0,
@@ -41,9 +44,10 @@ class JudgeResult(BaseModel):
 
 def _normalized_brand(top_brand: str) -> str:
     value = (top_brand or "").strip()
-    if not value:
-        return "Unknown"
-    return value
+    allowed = {"Tesla", "Rivian", "Lucid", "Other"}
+    if value in allowed:
+        return value
+    return "Other"
 
 
 async def _with_retry(
@@ -85,7 +89,8 @@ async def _judge_response(
                     "content": (
                         "You are an expert EV brand analyst. Extract structured metrics "
                         "from the provided model response.\n"
-                        "- top_brand: one string, choose from brands mentioned; prefer Tesla/Rivian/Lucid if applicable.\n"
+                        "- top_brand: must be exactly one of [Tesla, Rivian, Lucid, Other].\n"
+                        "- choose Other only if none of Tesla/Rivian/Lucid is the top recommendation.\n"
                         "- sentiment: float in [-1.0, 1.0].\n"
                         "- key_features: concise list of recommendation drivers."
                     ),
