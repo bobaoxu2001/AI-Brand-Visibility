@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 from datetime import datetime, timezone
+import json
 from pathlib import Path
 from typing import Iterable, Sequence
 
@@ -147,3 +148,54 @@ def category_breakdown(conn: sqlite3.Connection) -> Sequence[sqlite3.Row]:
         ORDER BY category
         """
     ).fetchall()
+
+
+def fetch_raw_responses_for_evaluation(
+    conn: sqlite3.Connection, *, force: bool = False
+) -> list[sqlite3.Row]:
+    if force:
+        query = """
+            SELECT rr.id, rr.prompt_id, rr.model_name, rr.raw_text
+            FROM raw_responses rr
+            WHERE rr.status = 'success'
+              AND rr.raw_text IS NOT NULL
+            ORDER BY rr.id
+        """
+    else:
+        query = """
+            SELECT rr.id, rr.prompt_id, rr.model_name, rr.raw_text
+            FROM raw_responses rr
+            LEFT JOIN parsed_metrics pm ON pm.response_id = rr.id
+            WHERE rr.status = 'success'
+              AND rr.raw_text IS NOT NULL
+              AND pm.id IS NULL
+            ORDER BY rr.id
+        """
+    return conn.execute(query).fetchall()
+
+
+def upsert_parsed_metric(
+    conn: sqlite3.Connection,
+    *,
+    response_id: int,
+    top_brand: str,
+    sentiment: float,
+    key_features: list[str],
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO parsed_metrics (
+            response_id,
+            top_brand,
+            sentiment,
+            key_features
+        )
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(response_id) DO UPDATE SET
+            top_brand = excluded.top_brand,
+            sentiment = excluded.sentiment,
+            key_features = excluded.key_features
+        """,
+        (response_id, top_brand, sentiment, json.dumps(key_features, ensure_ascii=False)),
+    )
+    conn.commit()
